@@ -179,6 +179,9 @@ jadx_mcp: yes
 
 ### 2026/4/23
 初版发布
-
+### 2026/5/20
+- 新增 `ai_summarizer.py`：4 个索引脚本执行后自动生成压缩摘要，减少 AI token 消耗
+- 新增 `sign_rebuilder.py`：支持 17 种算法和 pipeline 链式组合，Phase 5 直接生成 sign 复现请求
+- `ghidra_target_loader.py` 支持 macOS 和 Windows，用户需提前填写 `ghidra_root`
 
 
