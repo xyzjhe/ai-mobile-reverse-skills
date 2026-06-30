@@ -26,18 +26,22 @@ ai-mobile-reverse-skills/
 │   ├── agent-01-sample-recon.md              # 第一阶段：APK 静态侦察
 │   ├── agent-02-protocol-mapper.md           # 第二阶段：流量与代码对齐
 │   ├── agent-03-crypto-native-analyzer.md    # 第三阶段：SO / JNI 深度分析
-│   ├── agent-04-crypto-vuln-analyzer.md      # 第四阶段：弱加密与高风险漏洞筛查
+│   ├── agent-04-crypto-vuln-analyzer.md      # 第四阶段：弱加密与高风险漏洞筛查（含 Guardian L1-L5）
 │   ├── agent-05-validation-designer.md       # 第五阶段：最小验证 POC 设计
 │   └── agent-06-reporter.md                  # 第六阶段：安全报告汇总
 ├── docs/                                     # 阶段接入与补充文档
+│   ├── STATE-MODEL.md                        # 状态模型（analysis_state + session_blackboard）
 │   └── MCP-INTEGRATION.md                    # MCP 分阶段接入规范
 ├── templates/                                # 报告与复现模板
+│   ├── analysis_state.template.json          # Phase 流程状态初始化模板
+│   ├── session_blackboard.template.json      # 跨 Phase 知识积累初始化模板
 │   ├── mobile-reverse-report-template.md     # 移动安全报告模板
 │   └── repro-steps-template.md               # 复现步骤模板
 ├── tools/                                    # 配套工具与模板资源
 │   ├── frida/                                # Frida 相关模板
 │   │   ├── README.md                         # Frida 模板说明
-│   │   └── android_phase1_bypass.js          # Phase 1 运行时准备 / 观察模板
+│   │   ├── android_phase1_bypass.js          # Phase 1 运行时准备 / 观察模板
+│   │   └── dex_dumper_art.js                 # ART DEX dump 模板
 │   ├── poc_templates/                        # POC / 验证模板
 │   │   ├── README.md                         # POC 模板说明
 │   │   ├── CASE_README.md.tmpl               # 单漏洞验证说明模板
@@ -49,8 +53,11 @@ ai-mobile-reverse-skills/
 │       ├── env_guard_indexer.py              # Root / 代理 / Frida / SSL Pinning 线索提取
 │       ├── native_bridge_indexer.py          # JNI / JSBridge / native crypto 线索提取
 │       ├── secret_scanner.py                 # 硬编码密钥 / Token / 证书 / 云凭证扫描
+│       ├── ai_summarizer.py                  # 索引脚本执行后生成压缩摘要
+│       ├── sign_rebuilder.py                 # Phase 5 签名重算，支持 17 种算法
 │       ├── resolve_native_target.py          # 自动收敛第三阶段优先分析的 SO 目标
-│       └── ghidra_target_loader.py           # 自动导入目标 SO 到 Ghidra 项目
+│       ├── ghidra_target_loader.py           # 自动导入目标 SO 到 Ghidra 项目
+│       └── ida_target_loader.py              # 自动导入目标 SO 到 IDA（headless 建库 + 拉起 GUI）
 ```
 
 ![在这里插入图片描述](https://i-blog.csdnimg.cn/direct/7c754161e2d2472c88d6cf4a08d196d6.png#pic_center)
@@ -73,7 +80,7 @@ ai-mobile-reverse-skills/
 | Phase 1 | SampleRecon | APK 静态侦察、技术栈识别、环境检测、敏感入口与 SO 线索初筛 | `file_inventory.json`、`tech_stack.json`、`entrypoints.json`、`env_guard_report.json` |
 | Phase 2 | ProtocolMapper | 将抓包请求、接口字段、签名参数和代码实现对齐 | `api_endpoints.json`、`protocol_map.json`、`traffic_alignment.json` |
 | Phase 3 | CryptoNativeAnalyzer | 围绕 Phase 2 线索分析 JNI / SO / native 加密和签名逻辑 | `crypto_native_analysis.json`、`jni_analysis.json` |
-| Phase 4 | CryptoVulnAnalyzer | 综合前序证据，收口弱加密与高风险漏洞 | `vuln_analysis.json`、`risk_matrix.json`、`secrets_report.json`、`jsbridge_analysis.json` |
+| Phase 4 | CryptoVulnAnalyzer | 综合前序证据，收口弱加密与高风险漏洞；每条漏洞输出 Guardian L1-L5 证据深度标注 | `vuln_analysis.json`（含 `guardian_level`）、`risk_matrix.json`（含 `phase5_priority_queue`）、`secrets_report.json`、`jsbridge_analysis.json` |
 | Phase 5 | ValidationDesigner | 在授权环境下设计最小验证方案和 POC 模板 | `validation_cases.json`、`test_plan.md`、`repro_steps.md` |
 | Phase 6 | Reporter | 汇总 Phase 1-5，生成交付报告和 Findings | `security_report.md`、`findings.json` |
 
@@ -179,9 +186,18 @@ jadx_mcp: yes
 
 ### 2026/4/23
 初版发布
+
 ### 2026/5/20
 - 新增 `ai_summarizer.py`：4 个索引脚本执行后自动生成压缩摘要，减少 AI token 消耗
 - 新增 `sign_rebuilder.py`：支持 17 种算法和 pipeline 链式组合，Phase 5 直接生成 sign 复现请求
 - `ghidra_target_loader.py` 支持 macOS 和 Windows，用户需提前填写 `ghidra_root`
+
+### 2026/6/28
+- 新增 `session_blackboard.json`：各阶段关键发现（密钥、native 目标、加密算法）写入共享黑板，下游阶段直接读取，无需重复推导
+- 新增 Phase 2 → Phase 3 Intent 定向信号：Phase 2 将锁定的目标 so 和字段写入黑板，Phase 3 直接从指定目标开始分析
+- 新增 Guardian L1-L5 证据深度标注：每条漏洞标注可利用程度（Phase 4 静态最高判到 L4 可直接出 PoC / L3 需 Frida 确认 / L2 调用链待补全；L5 为 Phase 5 运行时确认），`risk_matrix.json` 同步输出 Phase 5 优先级工作队列
+- 新增 auto_chain 质量门：阶段完成后自动检查新增发现数，为零时向下游写入预警，各阶段质量可感知
+- 新增 `ida_target_loader.py`：IDA 版 so 自动化拉取，与 `ghidra_target_loader.py` 输入通用，Phase 2 选定的 so 自动 headless 建库分析并拉起 IDA GUI，交给 `ida_pro_mcp` 接手；macOS/Windows 标准路径下自动定位 IDA，兼容 9.x（`ida`/`idat`）与 8.x（`ida64`/`idat64`）
+
 
 
